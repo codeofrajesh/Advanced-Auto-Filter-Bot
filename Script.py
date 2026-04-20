@@ -325,4 +325,12 @@ class script(object):
 
     PAGE_TXT = """ᴡʜʏ ᴀʀᴇ ʏᴏᴜ ꜱᴏ ᴄᴜʀɪᴏᴜꜱ ⁉️"""    
    
-    SOURCE_TXT = """<b>𝖲𝖮𝖴𝖱𝖢𝖤 𝖢𝖮𝖣𝖤 :</b> 💎 Welcome to a Premium Private Bot/n/n🔐 This bot is a modified version and not open-source./n⚙️ Advanced features have been added by the developer./n/n📩 Access is restricted./nTo use this bot, you must contact the admin./n/n🚫 Copying, cloning, or sharing this bot without permission is strictly prohibited."""
+    SOURCE_TXT = """<b>𝖲𝖮𝖴𝖱𝖢𝖤 𝖢𝖮𝖣𝖤 :</b> 💎 𝗪𝗲𝗹𝗰𝗼𝗺𝗲 𝘁𝗼 𝗮 𝗣𝗿𝗲𝗺𝗶𝘂𝗺 𝗣𝗿𝗶𝘃𝗮𝘁𝗲 𝗕𝗼𝘁
+
+🔐 𝗧𝗵𝗶𝘀 𝗯𝗼𝘁 𝗶𝘀 𝗮 𝗺𝗼𝗱𝗶𝗳𝗶𝗲𝗱 𝘃𝗲𝗿𝘀𝗶𝗼𝗻 𝗮𝗻𝗱 𝗻𝗼𝘁 𝗼𝗽𝗲𝗻-𝘀𝗼𝘂𝗿𝗰𝗲.
+⚙️ 𝗔𝗱𝘃𝗮𝗻𝗰𝗲𝗱 𝗳𝗲𝗮𝘁𝘂𝗿𝗲𝘀 𝗵𝗮𝘃𝗲 𝗯𝗲𝗲𝗻 𝗮𝗱𝗱𝗲𝗱 𝗯𝘆 𝘁𝗵𝗲 𝗱𝗲𝘃𝗲𝗹𝗼𝗽𝗲𝗿.
+
+📩 𝗔𝗰𝗰𝗲𝘀𝘀 𝗶𝘀 𝗿𝗲𝘀𝘁𝗿𝗶𝗰𝘁𝗲𝗱.
+𝗧𝗼 𝘂𝘀𝗲 𝘁𝗵𝗶𝘀 𝗯𝗼𝘁, 𝘆𝗼𝘂 𝗺𝘂𝘀𝘁 𝗰𝗼𝗻𝘁𝗮𝗰𝘁 𝘁𝗵𝗲 𝗮𝗱𝗺𝗶𝗻.
+
+🚫 𝗖𝗼𝗽𝘆𝗶𝗻𝗴, 𝗰𝗹𝗼𝗻𝗶𝗻𝗴, 𝗼𝗿 𝘀𝗵𝗮𝗿𝗶𝗻𝗴 𝘁𝗵𝗶𝘀 𝗯𝗼𝘁 𝘄𝗶𝘁𝗵𝗼𝘂𝘁 𝗽𝗲𝗿𝗺𝗶𝘀𝘀𝗶𝗼𝗻 𝗶𝘀 𝘀𝘁𝗿𝗶𝗰𝘁𝗹𝘆 𝗽𝗿𝗼𝗵𝗶𝗯𝗶𝘁𝗲𝗱."""
