@@ -12,6 +12,7 @@ import datetime
 
 async def group_setting_buttons(grp_id):
     settings = await get_settings(grp_id)
+    join_hider_status = "✅" if settings.get("join_hider", False) else "❌"
     buttons = [[
                 InlineKeyboardButton('ʀᴇꜱᴜʟᴛ ᴘᴀɢᴇ', callback_data=f'setgs#button#{settings.get("button")}#{grp_id}',),
                 InlineKeyboardButton('ʙᴜᴛᴛᴏɴ' if settings.get("button") else 'ᴛᴇxᴛ', callback_data=f'setgs#button#{settings.get("button")}#{grp_id}',),
@@ -38,6 +39,8 @@ async def group_setting_buttons(grp_id):
             ],[
                 InlineKeyboardButton('ᴄᴜꜱᴛᴏᴍ ꜰꜱᴜʙ', callback_data=f'fsub_setgs#{grp_id}',),
                 InlineKeyboardButton('ᴅᴇʟᴇᴛᴇ ɢʀᴏᴜᴘ', callback_data=f'delete_group_check#{grp_id}')
+            ],[
+                InlineKeyboardButton(f"Join/Left Hider {join_hider_status}", callback_data=f"set_join_hider#{grp_id}")
             ],[
             InlineKeyboardButton('🚀 ᴍᴇᴍʙᴇʀ ʙᴏᴏꜱᴛᴇʀ', callback_data=f'booster_setgs#{grp_id}'),
             ],[
@@ -1026,23 +1029,26 @@ async def check_adds_callback(client, query):
     
     # Security: Only let the actual restricted user click their own button
     if str(query.from_user.id) != target_user_id:
-        await query.answer("This button is only for the restricted user!", show_alert=True)
+        await query.answer("This button is only for that user!", show_alert=True)
         raise StopPropagation # Stops pm_filter from showing the MSG_ALRT
         
     chat_id = query.message.chat.id
     settings = await get_settings(chat_id)
     required_count = settings.get("booster_count", 1)
-    
-    # Fetch their exact score from MongoDB
     current_count = await db.get_booster_count(chat_id, query.from_user.id)
     
     # Send the pop-up alert!
-    await query.answer(
-        f"📊 Your Stats:\n\nUsers added: {current_count}\nRequired: {required_count}\n\nPlease add {required_count - current_count} more to unlock messaging.", 
-        show_alert=True
-    )
-    
-    # THE KILL SWITCH: Stops the click from falling through to pm_filter.py
+    if current_count >= required_count:
+        await query.answer(
+            f"📊 Your Stats:\n\nUsers added: {current_count}\nRequired: {required_count}\n\n✅ Target reached! Access granted to message.", 
+            show_alert=True
+        )
+    else:
+        remaining = required_count - current_count
+        await query.answer(
+            f"📊 Your Stats:\n\nUsers added: {current_count}\nRequired: {required_count}\n\n⚠️ Please add {remaining} more to unlock messaging.", 
+            show_alert=True
+        )
     raise StopPropagation
 
 @Client.on_callback_query(filters.regex(r'^booster_reset_menu'), group=-1)
@@ -1103,3 +1109,54 @@ async def booster_cycle_reset(client, query):
     # Refresh menu to show the new state
     query.data = f"booster_reset_menu#{grp_id}"
     await booster_reset_menu(client, query)
+
+@Client.on_callback_query(filters.regex(r'^set_join_hider#'))
+async def toggle_join_hider(client, query):
+    # 1. Extract the group ID from the button click
+    ident, grp_id = query.data.split("#")
+    userid = query.from_user.id if query.from_user else None
+    
+    # 2. Strict Admin Verification
+    st = await client.get_chat_member(grp_id, userid)
+    if (
+            st.status != enums.ChatMemberStatus.ADMINISTRATOR
+            and st.status != enums.ChatMemberStatus.OWNER
+            and str(userid) not in ADMINS
+    ):
+        await query.answer("ʏᴏᴜ ᴅᴏɴ'ᴛ ʜᴀᴠᴇ ʀɪɢʜᴛꜱ ᴛᴏ ᴅᴏ ᴛʜɪꜱ !", show_alert=True)
+        return
+
+    # 3. Toggle the Setting in the Database
+    settings = await get_settings(int(grp_id))
+    current_status = settings.get("join_hider", False)
+    new_status = not current_status
+    
+    # Save the new status (Adjust 'save_group_settings' to match your bot's exact db save function if it differs)
+    await save_group_settings(int(grp_id), "join_hider", new_status) 
+    
+    # Alert the admin
+    status_text = "ON" if new_status else "OFF"
+    await query.answer(f"🧹 Built-in Join Hider is now {status_text}!", show_alert=True)
+
+    # 4. Refresh the Settings Menu UI dynamically
+    title = query.message.chat.title
+    btn = await group_setting_buttons(int(grp_id))
+    text = await get_main_settings_text(int(grp_id), title)
+    
+    try:
+        await query.message.edit_text(
+            text=text,
+            disable_web_page_preview=True,
+            parse_mode=enums.ParseMode.HTML,
+            reply_markup=InlineKeyboardMarkup(btn)
+        )
+    except FloodWait as e:
+        await asyncio.sleep(e.value)
+        await query.message.edit_text(
+            text=text,
+            disable_web_page_preview=True,
+            parse_mode=enums.ParseMode.HTML,
+            reply_markup=InlineKeyboardMarkup(btn)
+        )
+    except MessageNotModified:
+        pass    

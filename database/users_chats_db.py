@@ -3,7 +3,7 @@ from info import *
 from datetime import timedelta
 import time, datetime, pytz
 from pymongo.errors import DuplicateKeyError
-from pymongo import MongoClient
+from pymongo import MongoClient, ReturnDocument
 from logging_helper import LOGGER
 
 class Database:    
@@ -434,11 +434,14 @@ class Database:
 
     async def inc_booster_count(self, chat_id, user_id, amount=1):
         booster_col = self.db['booster_stats']
-        await booster_col.update_one(
+        doc = await booster_col.find_one_and_update(
             {"chat_id": chat_id, "user_id": user_id},
             {"$inc": {"count": amount}},
-            upsert=True
+            upsert=True,
+            return_document=ReturnDocument.AFTER
         )
+        return doc["count"]
+    
     async def reset_all_booster_scores(self, chat_id):
         # Deletes all score documents for this specific group
         booster_col = self.db['booster_stats']

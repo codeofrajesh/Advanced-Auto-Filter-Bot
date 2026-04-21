@@ -1,5 +1,5 @@
 from pyrogram import Client, filters, enums, StopPropagation
-from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery, ChatPermissions
+from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery, ChatPermissions, ChatMemberUpdated
 from pyrogram.errors.exceptions.bad_request_400 import MessageTooLong, PeerIdInvalid
 from info import *
 from database.users_chats_db import db, db2
@@ -84,44 +84,68 @@ async def save_group(bot, message):
                     pass
                 
 # 1. THE SILENT TRACKER: Only tracks when existing members invite new people
-@Client.on_message(filters.new_chat_members & filters.group, group=5)
-async def booster_score_tracker(bot, message):
-    chat_id = message.chat.id
+@Client.on_chat_member_updated(group=5)
+async def booster_score_tracker(bot,update: ChatMemberUpdated):
+    if not update.new_chat_member:
+        return
+    if update.old_chat_member:
+        if update.old_chat_member.status not in [enums.ChatMemberStatus.LEFT, enums.ChatMemberStatus.BANNED]:
+            return
+        
+    if update.new_chat_member.status not in [enums.ChatMemberStatus.MEMBER, enums.ChatMemberStatus.RESTRICTED]:
+        return
+    if update.new_chat_member.user.is_bot:
+        return    
+
+    chat_id = update.chat.id
     settings = await get_settings(chat_id)
     
     if not settings.get("member_booster", False):
         return
 
-    inviter = message.from_user
-    new_members = message.new_chat_members
-    bypassed = settings.get("booster_bypass", [])
+    inviter_id = None
+    if update.invite_link and update.invite_link.creator:
+        inviter_id = update.invite_link.creator.id
+    elif update.from_user and update.from_user.id != update.new_chat_member.user.id:
+        inviter_id = update.from_user.id
+    if not inviter_id:
+        return
+    if inviter_id in ADMINS:
+        return        
+    bypassed_users = settings.get("booster_bypass", [])
+    if inviter_id in bypassed_users:
+        return
+    
+    #current_count = await db.get_booster_count(chat_id, inviter_id)
+    #await db.inc_booster_count(chat_id, inviter_id, 1)
+    #new_score = await db.get_booster_count(chat_id, inviter_id)
+    
     required_count = settings.get("booster_count", 1)
 
-    if inviter:
-        is_inviter_admin = await is_check_admin(bot, chat_id, inviter.id)
-        if not is_inviter_admin and inviter.id not in [m.id for m in new_members] and inviter.id not in bypassed:
-            added_real_users = len([m for m in new_members if not m.is_bot])
+    # 1. Atomically add the point AND get the new score in a single line!
+    new_score = await db.inc_booster_count(chat_id, inviter_id, 1)
+
+    if new_score == required_count:
+        try:
+            # Unrestrict the inviter
+            unrestrict_perms = ChatPermissions(
+                can_send_messages=True,
+                can_send_media_messages=False,
+                can_add_web_page_previews=False,
+                can_send_polls=False,
+                can_invite_users=True 
+            )
+            await bot.restrict_chat_member(chat_id, inviter_id, unrestrict_perms)
             
-            if added_real_users > 0:
-                await db.inc_booster_count(chat_id, inviter.id, added_real_users)
-                current_count = await db.get_booster_count(chat_id, inviter.id)
-                
-                # Send a congratulatory message ONLY exactly when they hit the target
-                if current_count == required_count:
-                    try:
-                        # Ensure any lingering mute is lifted natively
-                        unmute_perms = ChatPermissions(
-                            can_send_messages=True,
-                            can_send_media_messages=True,
-                            can_add_web_page_previews=True,
-                            can_send_polls=True,
-                            can_invite_users=True
-                        )
-                        await bot.restrict_chat_member(chat_id, inviter.id, unmute_perms)
-                        success = await message.reply(f"🎉 <b>Congratulations {inviter.mention}!</b> You have added {required_count} members and unlocked messaging!")
-                        asyncio.create_task(delete_after_delay(success, 30))
-                    except Exception:
-                        pass
+            # Fetch the inviter's profile to mention them
+            inviter = await bot.get_users(inviter_id)
+            success = await bot.send_message(
+                chat_id, 
+                f"🎉 **Congratulations {inviter.mention}!** You have added {required_count} members and permanently unlocked messaging!"
+            )
+            asyncio.create_task(delete_after_delay(success, 30))
+        except Exception as e:
+            LOGGER.error(f"Advanced Tracker Error: {e}")
 
 
 # 2. THE MESSAGE INTERCEPTOR: Scans all text/media and nukes it if target isn't met
@@ -231,6 +255,19 @@ async def booster_message_interceptor(bot, message):
     finally:
         LOGGER.info("=========================================")
 
+
+@Client.on_message(filters.group & (filters.new_chat_members | filters.left_chat_member), group=-98)
+async def builtin_join_hider(bot, message):
+    chat_id = message.chat.id
+    settings = await get_settings(chat_id)
+    
+    # Check if the admin turned the feature ON
+    if settings.get("join_hider", False):
+        try:
+            await message.delete()
+        except Exception:
+            pass
+        
 @Client.on_message(filters.command('leave') & filters.user(ADMINS))
 async def leave_a_chat(bot, message):
     if len(message.command) == 1:
