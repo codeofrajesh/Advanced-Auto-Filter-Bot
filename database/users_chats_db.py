@@ -18,6 +18,7 @@ class Database:
         self.verify_id = self.db.verify_id 
         self.codes = self.db.codes
         self.connection = self.db.connections
+        self.file_store = self.db.file_store
 
     async def find_join_req(self, id, chnl):
         chnl = str(chnl)
@@ -447,6 +448,22 @@ class Database:
         booster_col = self.db['booster_stats']
         await booster_col.delete_many({"chat_id": chat_id})
 
+    async def save_store_hash(self, hash_id, file_data):
+        # file_data will be a list of dicts: [{"chat_id": id, "msg_id": id}, ...]
+        await self.file_store.insert_one({"hash": hash_id, "files": file_data})
+
+    async def get_store_hash(self, hash_id):
+        data = await self.file_store.find_one({"hash": hash_id})
+        return data["files"] if data else None    
+    async def get_all_store_hashes(self):
+        cursor = self.file_store.find({})
+        hashes = []
+        async for doc in cursor:
+            hashes.append(doc)
+        return hashes
+
+    async def delete_store_hash(self, hash_id):
+        await self.file_store.delete_one({"hash": hash_id})
         
 db = Database(DATABASE_URI, DATABASE_NAME)    
 db2 = Database(DATABASE_URI2, DATABASE_NAME)

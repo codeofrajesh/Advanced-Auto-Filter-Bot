@@ -31,13 +31,150 @@ async def start(client, message):
     if EMOJI_MODE:
         try:
             await message.react(emoji=random.choice(REACTIONS))
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"EMOJI CRASH REASON: {e}")
     maintenance_mode = await db.get_maintenance_status(bot_id)
     if maintenance_mode and message.from_user.id not in ADMINS:
         await message.reply_text("ɪ ᴀᴍ ᴄᴜʀʀᴇɴᴛʟʏ ᴜɴᴅᴇʀ ᴍᴀɪɴᴛᴇɴᴀɴᴄᴇ 🛠️. ɪ ᴡɪʟʟ ʙᴇ ʙᴀᴄᴋ ꜱᴏᴏɴ 🔜")
         return
     m = message
+    # --- NEW FILE STORE INTERCEPTOR ---
+    if len(m.command) == 2 and m.command[1].startswith('store_'):
+
+        try:
+            fsub_id_list = []
+            fsub_id_list = fsub_id_list + AUTH_CHANNEL if AUTH_CHANNEL else fsub_id_list
+            fsub_id_list = fsub_id_list + AUTH_REQ_CHANNEL if AUTH_REQ_CHANNEL else fsub_id_list       
+            if fsub_id_list:
+                fsub_ids = []
+                for chnl in fsub_id_list:
+                    if chnl not in fsub_ids:
+                        fsub_ids.append(chnl)
+                tasks = []
+                for chnl in fsub_ids:
+                    is_req_channel = AUTH_REQ_CHANNEL and chnl in AUTH_REQ_CHANNEL
+                    tasks.append(
+                        check_force_subscription(
+                            client,
+                            message.from_user.id,
+                            chnl,
+                            is_req_channel,
+                            is_subscribed,
+                            is_req_subscribed,
+                            message
+                        )
+                    )
+                results = await asyncio.gather(*tasks)
+                btn = []
+                i = 1
+                for res in results:
+                    if res:
+                        btn.append([
+                            InlineKeyboardButton(f"⛔️ {i}. {res['title']} ⛔️", url=res['url'])
+                        ])
+                        i += 1
+                if btn:
+                    btn.append([InlineKeyboardButton("♻️ ᴛʀʏ ᴀɢᴀɪɴ ♻️", url=f"https://t.me/{temp.U_NAME}?start={message.command[1]}")])
+                    await client.send_photo(
+                        chat_id=message.from_user.id,
+                        photo=random.choice(FSUB_IMG),
+                        caption=script.FORCESUB_TEXT,
+                        reply_markup=InlineKeyboardMarkup(btn),
+                        parse_mode=enums.ParseMode.HTML,
+                    )
+                    return # 🚫 BLOCKS ACCESS TO THE FILES 🚫
+        except Exception as e:
+            LOGGER.error(f"Error In File Store Fsub :- {e}")
+        # ==========================================
+        
+        hash_id = m.command[1].replace('store_', '')
+        file_data = await db.get_store_hash(hash_id)
+        
+        if not file_data:
+            return await message.reply("<b>❌ This link is invalid or has expired.</b>")
+            
+        k = await message.reply("<b>📥 Fetching your files... Please wait.</b>")
+        sent_messages = []
+
+        btn = [[InlineKeyboardButton("Update Channel ↗️", url=UPDATE_CHANNEL_LNK)]]
+        reply_markup = InlineKeyboardMarkup(btn)
+
+        for file in file_data:
+            try:
+                # copy_message strips the "Forwarded From" tag automatically!
+                source_msg = await client.get_messages(file["chat_id"], file["msg_id"])
+                
+                # 2. Extract the file name and size dynamically
+                file_name = "Unknown File"
+                file_size = "Unknown Size"
+                
+                if source_msg and source_msg.media:
+                    media_type = source_msg.media.value
+                    media = getattr(source_msg, media_type, None)
+                    if media:
+                        raw_name = getattr(media, "file_name", "Unknown File")
+                        # clean_filename and get_size are already imported in your commands.py!
+                        file_name = clean_filename(raw_name) if raw_name else "Unknown File"
+                        raw_size = getattr(media, "file_size", 0)
+                        file_size = get_size(raw_size) if raw_size else "Unknown Size"
+                        
+                # 3. Format your custom CAPTION from Script.py safely
+                try:
+                    # We pass file_name, file_size, and file_caption so you can use any of them in Script.py!
+                    formatted_caption = script.CAPTION.format(
+                        file_name=file_name, 
+                        file_size=file_size, 
+                        file_caption=source_msg.caption if source_msg.caption else ""
+                    )
+                except Exception:
+                    # Safe fallback just in case formatting fails
+                    formatted_caption = f"<b>{file_name}</b>\n\n📤 ᴜᴘʟᴏᴀᴅᴇᴅ ʙʏ: <a href=\"https://t.me/SilentXBotz\">SɪʟᴇɴᴛXʙᴏᴛᴢ</a>"
+                
+                # 4. Copy the message and OVERWRITE the caption with your formatted one!
+                copied_msg = await client.copy_message(
+                    chat_id=message.from_user.id,
+                    from_chat_id=file["chat_id"],
+                    message_id=file["msg_id"],
+                    caption=formatted_caption, 
+                    reply_markup=reply_markup
+                )
+                sent_messages.append(copied_msg.id)
+                await asyncio.sleep(0.5) 
+            except Exception as e:
+                pass # Skip deleted/missing messages in a batch
+                
+        await k.delete() 
+        
+        # --- FIX 1 & 3: The Notice Message ---
+        # Calculates minutes from the AUTO_DELETE_TIME variable
+        try:
+            delete_mins = int(AUTO_DELETE_TIME) // 60
+        except:
+            delete_mins = 5
+            
+        warning_text = (
+            "<b><u>❗️ ❗️ ❗️ IMPORTANT ❗️ ❗️ ❗️</u>\n\n"
+            f"THIS MOVIE FILE/VIDEO WILL BE DELETED IN {delete_mins} MINUTE 😐 (DUE TO COPYRIGHT ISSUES).\n\n"
+            "PLEASE FORWARD THIS FILE TO SOMEWHERE ELSE AND START DOWNLOADING THERE</b>"
+        )
+        warning_msg = await message.reply(warning_text)
+        
+        # Add the warning message to the deletion list so it gets wiped too!
+        sent_messages.append(warning_msg.id)
+
+        # Background task to auto-delete the batch
+        async def auto_delete_batch(chat_id, message_ids, delay):
+            await asyncio.sleep(delay)
+            try:
+                await client.delete_messages(chat_id, message_ids)
+                await client.send_message(chat_id, "<b>YOUR VIDEO / FILE IS SUCCESSFULLY DELETED ‼️</b>")
+            except Exception:
+                pass
+
+        # 1800 seconds = 30 minutes
+        asyncio.create_task(auto_delete_batch(message.from_user.id, sent_messages, int(AUTO_DELETE_TIME)))
+        return
+    
     if len(m.command) == 2 and m.command[1].startswith(('notcopy', 'sendall')):
         _, userid, verify_id, file_id = m.command[1].split("_", 3)
         user_id = int(userid)
@@ -101,6 +238,8 @@ async def start(client, message):
                     InlineKeyboardButton('♻️ ᴅᴍᴄᴀ', callback_data='disclaimer'),
                     InlineKeyboardButton('👤 ᴀʙᴏᴜᴛ', callback_data='me')
                 ],[
+                    InlineKeyboardButton('🛠️ ᴄᴏᴍᴍᴀɴᴅꜱ', callback_data='commands_menu')
+                ],[ 
                     InlineKeyboardButton('🚫 ᴇᴀʀɴ ᴍᴏɴᴇʏ ᴡɪᴛʜ ʙᴏᴛ 🚫', callback_data="earn")
                 ]]
         reply_markup = InlineKeyboardMarkup(buttons)
@@ -1098,3 +1237,68 @@ async def drop_groups_command(client, message):
     except Exception as e:
         await message.reply(f"Failed to delete collection: {e}")
         
+@Client.on_callback_query(filters.regex(r"^commands_menu$"))
+async def commands_menu_cb(client, query):
+    btn = [
+        [
+            InlineKeyboardButton("👮‍♂️ ᴀᴅᴍɪɴ", callback_data="admin_cmds"),
+            InlineKeyboardButton("👥 ɢʀᴏᴜᴘ", callback_data="group_cmds")
+        ],
+        [
+            InlineKeyboardButton("👤 ᴜꜱᴇʀ", callback_data="user_cmds")
+        ],
+        [
+            InlineKeyboardButton("🔙 ʙᴀᴄᴋ ᴛᴏ ʜᴏᴍᴇ", callback_data="back_to_start_menu")
+        ]
+    ]
+    await query.message.edit_text(
+        text="<b>🛠️ ꜱᴇʟᴇᴄᴛ ᴀ ᴄᴀᴛᴇɢᴏʀʏ ᴛᴏ ᴠɪᴇᴡ ᴄᴏᴍᴍᴀɴᴅꜱ:</b>",
+        reply_markup=InlineKeyboardMarkup(btn),
+        parse_mode=enums.ParseMode.HTML
+    )
+
+@Client.on_callback_query(filters.regex(r"^(admin_cmds|group_cmds|user_cmds)$"))
+async def specific_cmds_cb(client, query):
+    data = query.data
+    
+    # Secure the Admin Commands button!
+    if data == "admin_cmds":
+        if query.from_user.id not in ADMINS:
+            return await query.answer("⚠️ ᴀᴄᴄᴇꜱꜱ ᴅᴇɴɪᴇᴅ: ᴛʜɪꜱ ɪꜱ ᴏɴʟʏ ꜰᴏʀ ᴀᴅᴍɪɴꜱ!", show_alert=True)
+        text = script.ADMIN_CMD
+        
+    elif data == "group_cmds":
+        text = script.GROUP_CMD
+        
+    elif data == "user_cmds":
+        text = script.USER_CMD
+        
+    btn = [[InlineKeyboardButton("🔙 ʙᴀᴄᴋ", callback_data="commands_menu")]]
+    await query.message.edit_text(
+        text=text, 
+        reply_markup=InlineKeyboardMarkup(btn), 
+        parse_mode=enums.ParseMode.HTML, 
+        disable_web_page_preview=True
+    )
+
+@Client.on_callback_query(filters.regex(r"^back_to_start_menu$"))
+async def back_to_start_cb(client, query):
+    buttons = [[
+                    InlineKeyboardButton('+ ᴀᴅᴅ ᴍᴇ ᴛᴏ ʏᴏᴜʀ ɢʀᴏᴜᴘ +', url=f'http://telegram.me/{temp.U_NAME}?startgroup=true')
+                ],[
+                    InlineKeyboardButton('🧧 ᴛʀᴇɴᴅɪɴɢ', callback_data="topsearch"),
+                    InlineKeyboardButton('🎟️ ᴜᴘɢʀᴀᴅᴇ', callback_data="premium"),
+                ],[
+                    InlineKeyboardButton('♻️ ᴅᴍᴄᴀ', callback_data='disclaimer'),
+                    InlineKeyboardButton('👤 ᴀʙᴏᴜᴛ', callback_data='me')
+                ],[
+                    InlineKeyboardButton('🛠️ ᴄᴏᴍᴍᴀɴᴅꜱ', callback_data='commands_menu')
+                ],[ 
+                    InlineKeyboardButton('🚫 ᴇᴀʀɴ ᴍᴏɴᴇʏ ᴡɪᴛʜ ʙᴏᴛ 🚫', callback_data="earn")
+                ]]
+    reply_markup = InlineKeyboardMarkup(buttons)
+    await query.message.edit_text(
+        text=script.START_TXT.format(query.from_user.mention, temp.U_NAME, temp.B_NAME),
+        reply_markup=reply_markup,
+        parse_mode=enums.ParseMode.HTML,
+    )
